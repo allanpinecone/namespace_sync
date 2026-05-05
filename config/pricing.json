@@ -1,0 +1,43 @@
+{
+  "_comment": "Pinecone serverless pricing as of 2026. Override by editing this file or via the UI's Settings > Pricing panel.",
+  "asOf": "2026-04-01",
+  "currency": "USD",
+  "rates": {
+    "readUnit": 0.00000025,
+    "writeUnit": 0.0000004,
+    "storageGBMonth": 3.6
+  },
+  "operationCosts": {
+    "_doc": "Derived from https://docs.pinecone.io/guides/manage-cost/understanding-cost",
+    "listRUPerCall": 1,
+    "listIdsPerCall": 100,
+    "fetchRUPer10Records": 1,
+    "fetchMinRU": 1,
+    "queryMinRU": 0.25,
+    "queryRUPerGBNamespace": 1,
+    "upsertWUPerKB": 1,
+    "upsertMinWUPerRequest": 5,
+    "updateWUPerKB": 1,
+    "updateMinWUPerRequest": 5,
+    "deleteWUPerKB": 1,
+    "deleteMinWUPerRequest": 5
+  },
+  "limits": {
+    "fetchMaxIdsPerRequest": 1000,
+    "upsertMaxRecordsPerRequest": 1000,
+    "upsertMaxBytesPerRequest": 2097152,
+    "upsertMaxBytesPerSecondPerNamespace": 52428800,
+    "listIdsMaxPerCall": 100,
+    "perNamespaceQPS": {
+      "query": 100,
+      "upsert": 100,
+      "update": 100,
+      "delete": 100
+    },
+    "perIndexQPS": {
+      "fetch": 100,
+      "list": 200,
+      "describeIndexStats": 100
+    }
+  }
+}

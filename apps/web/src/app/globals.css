@@ -1,0 +1,39 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 220 27% 8%;
+  --foreground: 220 15% 96%;
+  --card: 220 25% 11%;
+  --muted: 220 20% 16%;
+  --muted-foreground: 220 10% 65%;
+  --border: 220 25% 18%;
+  --primary: 200 100% 60%;
+  --primary-foreground: 220 27% 8%;
+  --accent: 280 80% 60%;
+  --success: 142 70% 45%;
+  --warning: 38 95% 55%;
+  --danger: 0 75% 55%;
+  --font-sans: ui-sans-serif;
+  --font-mono: ui-monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  min-height: 100%;
+}
+
+body {
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+::selection {
+  background: hsl(var(--primary) / 0.4);
+}

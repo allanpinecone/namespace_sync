@@ -1,0 +1,137 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: migrator-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-migrator}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-migrator}
+      POSTGRES_DB: ${POSTGRES_DB:-migrator}
+    ports:
+      - '${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - migrator-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-migrator} -d ${POSTGRES_DB:-migrator}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: migrator-redis
+    command: ['redis-server', '--appendonly', 'yes']
+    ports:
+      - '${REDIS_PORT:-6379}:6379'
+    volumes:
+      - migrator-redis:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redpanda:
+    image: redpandadata/redpanda:v24.2.10
+    container_name: migrator-redpanda
+    command:
+      - redpanda
+      - start
+      - --smp=1
+      - --memory=1G
+      - --reserve-memory=0M
+      - --overprovisioned
+      - --node-id=0
+      - --check=false
+      - --kafka-addr=PLAINTEXT://0.0.0.0:29092,OUTSIDE://0.0.0.0:9092
+      - --advertise-kafka-addr=PLAINTEXT://redpanda:29092,OUTSIDE://localhost:9092
+      - --pandaproxy-addr=0.0.0.0:8082
+      - --advertise-pandaproxy-addr=localhost:8082
+    ports:
+      - '9092:9092'
+      - '8082:8082'
+      - '9644:9644'
+    volumes:
+      - migrator-redpanda:/var/lib/redpanda/data
+    healthcheck:
+      test: ['CMD-SHELL', 'rpk cluster health | grep -E "Healthy:.+true"']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redpanda-console:
+    image: redpandadata/console:v2.7.2
+    container_name: migrator-redpanda-console
+    depends_on:
+      - redpanda
+    environment:
+      KAFKA_BROKERS: redpanda:29092
+    ports:
+      - '8080:8080'
+
+  # --- Application services (built locally) ---
+
+  api:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.api
+    container_name: migrator-api
+    profiles: [app]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-migrator}:${POSTGRES_PASSWORD:-migrator}@postgres:5432/${POSTGRES_DB:-migrator}
+      REDIS_URL: redis://redis:6379
+      KAFKA_BROKERS: redpanda:29092
+      MIGRATOR_MASTER_KEY: ${MIGRATOR_MASTER_KEY:-dev-master-key-change-me-please-32+}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000,http://127.0.0.1:3000}
+      API_PORT: 4000
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - '4000:4000'
+
+  worker:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.worker
+    container_name: migrator-worker
+    profiles: [app]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-migrator}:${POSTGRES_PASSWORD:-migrator}@postgres:5432/${POSTGRES_DB:-migrator}
+      REDIS_URL: redis://redis:6379
+      KAFKA_BROKERS: redpanda:29092
+      MIGRATOR_MASTER_KEY: ${MIGRATOR_MASTER_KEY:-dev-master-key-change-me-please-32+}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+
+  web:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.web
+      args:
+        # Same-origin in the browser; Next rewrites to INTERNAL_API_URL (see next.config.mjs).
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/migrator-api}
+        INTERNAL_API_URL: ${INTERNAL_API_URL:-http://api:4000}
+    container_name: migrator-web
+    profiles: [app]
+    depends_on:
+      - api
+    environment:
+      INTERNAL_API_URL: ${INTERNAL_API_URL:-http://api:4000}
+    ports:
+      - '3000:3000'
+
+volumes:
+  migrator-postgres:
+  migrator-redis:
+  migrator-redpanda:

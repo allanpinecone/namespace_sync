@@ -1,0 +1,55 @@
+# Pinecone Migrator Helm chart values.
+# This is a *skeleton* chart intended to be a starting point for self-hosted k8s deployments.
+# It pins images that you build from this repo's Dockerfiles and pushes to your registry.
+
+image:
+  registry: ghcr.io
+  repository: yourorg/pinecone-migrator
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+api:
+  replicas: 1
+  port: 4000
+  service:
+    type: ClusterIP
+
+worker:
+  replicas: 2
+
+web:
+  replicas: 1
+  port: 3000
+  service:
+    type: ClusterIP
+
+ingress:
+  enabled: false
+  host: migrator.example.com
+
+postgres:
+  # Set to false to bring your own Postgres (recommend RDS / CloudSQL).
+  embedded: true
+  url: ""
+
+redis:
+  embedded: true
+  url: ""
+
+kafka:
+  brokers: "redpanda:9092"
+
+masterKey:
+  # 32+ random bytes. Generate with `openssl rand -base64 32`.
+  value: "REPLACE-WITH-32-BYTE-BASE64"
+
+resources:
+  api:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: 1000m, memory: 1Gi }
+  worker:
+    requests: { cpu: 200m, memory: 512Mi }
+    limits:   { cpu: 2000m, memory: 2Gi }
+  web:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits:   { cpu: 500m, memory: 512Mi }

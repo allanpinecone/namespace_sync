@@ -1,0 +1,24 @@
+FROM node:20-alpine AS deps
+RUN corepack enable
+WORKDIR /app
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml* ./
+COPY tsconfig.base.json ./
+COPY apps/api/package.json apps/api/
+COPY apps/web/package.json apps/web/
+COPY apps/worker/package.json apps/worker/
+COPY apps/cli/package.json apps/cli/
+COPY packages/shared/package.json packages/shared/
+COPY packages/cost-estimator/package.json packages/cost-estimator/
+COPY packages/pinecone-client/package.json packages/pinecone-client/
+RUN pnpm install --frozen-lockfile=false
+
+FROM deps AS build
+COPY . .
+RUN pnpm --filter @migrator/shared --filter @migrator/cost-estimator --filter @migrator/pinecone-client --filter @migrator/worker build
+
+FROM node:20-alpine AS runtime
+RUN corepack enable
+WORKDIR /app
+ENV NODE_ENV=production
+COPY --from=build /app /app
+CMD ["node", "apps/worker/dist/index.js"]

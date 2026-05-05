@@ -1,0 +1,6 @@
+apiVersion: v2
+name: pinecone-migrator
+description: Self-hosted Pinecone vector migrator (web + API + worker + Postgres + Redis + Redpanda)
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

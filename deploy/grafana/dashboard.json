@@ -1,0 +1,96 @@
+{
+  "title": "Pinecone Vector Migrator",
+  "uid": "pinecone-migrator",
+  "schemaVersion": 39,
+  "editable": true,
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Records copied (rate)",
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "unit": "ops" } },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(rate(migrator_records_copied_total[5m]))",
+          "legendFormat": "records/s"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Records failed (rate)",
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "unit": "ops" } },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(rate(migrator_records_failed_total[5m]))",
+          "legendFormat": "errors/s"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Read units consumed (1h)",
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(increase(migrator_read_units_total[1h]))",
+          "legendFormat": "RU"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Write units consumed (1h)",
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(increase(migrator_write_units_total[1h]))",
+          "legendFormat": "WU"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Sync replication lag",
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "targets": [
+        {
+          "expr": "migrator_sync_lag_seconds",
+          "legendFormat": "{{job_id}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Sync pending ops",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "targets": [
+        {
+          "expr": "migrator_sync_pending_ops",
+          "legendFormat": "{{job_id}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "CDC operations applied",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 12 },
+      "targets": [
+        { "expr": "rate(migrator_sync_inserts_total[5m])", "legendFormat": "inserts/s {{job_id}}" },
+        { "expr": "rate(migrator_sync_deletes_total[5m])", "legendFormat": "deletes/s {{job_id}}" },
+        { "expr": "rate(migrator_sync_updates_total[5m])", "legendFormat": "updates/s {{job_id}}" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+node_modules
+dist
+.next
+.turbo
+*.log
+.DS_Store
+.env
+.env.*
+!.env.example
+coverage
+.tsbuildinfo
+*.tsbuildinfo
+.pnpm-store
+.cache
