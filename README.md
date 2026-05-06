@@ -1,6 +1,6 @@
-# Pinecone Vector Migrator
+# Pinecone Namespace Sync
 
-A self-hosted companion for Pinecone that copies or syncs vectors between indexes and namespaces at scale. It's built for the kinds of migrations teams reach for as their Pinecone footprint grows — moving thousands of namespaces across regions, lifting an index to a new dimension, or splitting a multi-tenant index into per-tenant ones — with cost previews, resumable progress, and a zero-downtime sync option.
+A self-hosted companion for Pinecone that copies and synchronizes vectors between indexes and namespaces at scale. Whether you're replicating thousands of namespaces across regions, lifting an index to a new dimension, or splitting a multi-tenant index into per-tenant ones, it gives you cost previews, resumable progress, and a zero-downtime sync option.
 
 ## Walkthrough
 
@@ -14,7 +14,7 @@ Paste a Pinecone API key (encrypted at rest, ephemeral by default), choose sourc
 
 Sample a few records per namespace to nail down the metadata size, then see RU / WU / dollar estimates per namespace and in total. Pick **One-time copy** or **Zero-downtime sync**, choose how source namespaces map onto target ones, and (optionally) tell the worker to **skip already-present records** by ID or content hash so re-runs don't re-upsert what's already there.
 
-![Step 2 — cost preview and migration job options](docs/screenshots/2.png)
+![Step 2 — cost preview and job options](docs/screenshots/2.png)
 
 ### 3. Track every job from one dashboard
 
@@ -144,7 +144,7 @@ Formulas mirror [Pinecone's pricing docs](https://docs.pinecone.io/guides/manage
 - `fetch` → 1 RU per 10 records (1 RU minimum)
 - `upsert` → 1 WU per 1 KB (5 WU minimum per request)
 
-The UI samples ~50 records from each selected namespace to learn the average metadata size before pricing the migration. You can disable sampling for a quicker estimate or override the per-record bytes manually.
+The UI samples ~50 records from each selected namespace to learn the average metadata size before pricing the run. You can disable sampling for a quicker estimate or override the per-record bytes manually.
 
 ## CLI examples
 
