@@ -1,6 +1,6 @@
 # Pinecone Vector Migrator
 
-A self-hosted web app for copying or syncing vectors between Pinecone indexes and namespaces. It is purpose-built for the very common — and currently painful — task of migrating thousands of namespaces between indexes (e.g. across regions, into a new dimension, or splitting a multi-tenant index).
+A self-hosted companion for Pinecone that copies or syncs vectors between indexes and namespaces at scale. It's built for the kinds of migrations teams reach for as their Pinecone footprint grows — moving thousands of namespaces across regions, lifting an index to a new dimension, or splitting a multi-tenant index into per-tenant ones — with cost previews, resumable progress, and a zero-downtime sync option.
 
 ## Walkthrough
 
