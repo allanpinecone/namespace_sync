@@ -1,6 +1,6 @@
 # Pinecone Namespace Sync
 
-A self-hosted companion for Pinecone that copies and synchronizes vectors between indexes and namespaces at scale. Whether you're replicating thousands of namespaces across regions, lifting an index to a new dimension, or splitting a multi-tenant index into per-tenant ones, it gives you cost previews, resumable progress, and a zero-downtime sync option.
+A self-hosted companion for Pinecone that copies and synchronizes vectors between indexes and namespaces at scale. Whether you're replicating thousands of namespaces across regions, splitting a multi-tenant index into per-tenant ones, or mirroring a production index into staging, it gives you cost previews, resumable progress, and a zero-downtime sync option.
 
 ## Walkthrough
 
