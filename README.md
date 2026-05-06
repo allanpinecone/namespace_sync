@@ -68,6 +68,26 @@ docker compose --profile app down -v --rmi local
 
 `--profile app` is required so the api / worker / web services included by that profile are also torn down. Use `docker compose stop <service>` if you only want to pause a subset without removing them.
 
+### Starting back up
+
+After a plain `down` (no `-v`), your Postgres / Redis / Redpanda volumes are intact and the api / worker / web images are still cached locally. Just bring the stack back up:
+
+```bash
+# Reuse the existing images — fast, no rebuild.
+docker compose --profile app up -d
+
+# Only pass --build if you've changed code in apps/ or packages/ since the last build.
+docker compose --profile app up -d --build
+```
+
+Useful while it boots:
+
+```bash
+docker compose ps                       # confirm all containers are healthy
+docker compose logs -f api worker       # tail API + worker logs
+docker compose restart api              # nudge the API if it raced Postgres on first boot
+```
+
 ## Highlights
 
 - **Browse and search namespaces at scale.** Server streams the full namespace list (paginated 100 at a time per the Pinecone API). The frontend uses TanStack Virtual + Fuse.js for fuzzy/partial search and remains snappy even at 100k+ namespaces.
