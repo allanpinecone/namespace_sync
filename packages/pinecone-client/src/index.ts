@@ -1,4 +1,4 @@
-export { MigratorPineconeClient, approximateRecordBytes } from './client.js';
+export { MigratorPineconeClient, approximateRecordBytes, maybePrivatizeHost } from './client.js';
 export type {
   MigratorRecord,
   UsageHint,

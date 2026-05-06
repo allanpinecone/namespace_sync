@@ -100,6 +100,7 @@ docker compose restart api              # nudge the API if it raced Postgres on 
 - **Verification step** samples N IDs per namespace from both sides and reports mismatches.
 - **Cutover UX** for sync jobs: lag indicator, pending-ops gauge, "Promote" button to drain Kafka and retire the poller.
 - **Tombstone safety**: if more than X% of target IDs disappear from source in a single pass, the poller pauses and asks for human confirmation.
+- **BYOC-aware**: when the worker is deployed inside a customer VPC, it auto-detects Pinecone BYOC private endpoints and routes data-plane traffic through the in-VPC load balancer instead of the (unreachable) public hostname. Lets you copy or sync between SaaS indexes and private BYOC indexes from a single job. See [Pinecone BYOC private-cluster support](#pinecone-byoc-private-cluster-support).
 - **API key handling**: encrypted-at-rest with XChaCha20-Poly1305 keyed via a master HKDF; default ephemeral mode purges keys on server restart.
 - **Observability**: Prometheus `/metrics` endpoint, ready-to-use Grafana dashboard ([deploy/grafana/dashboard.json](deploy/grafana/dashboard.json)), and a queryable audit log.
 - **CLI parity**: every action is callable from `pinecone-migrator` for scripting and CI.
@@ -225,6 +226,56 @@ pinecone-migrator promote <jobId>
 - 1000 IDs per fetch, 1000 records or 2 MB per upsert request, 100 IDs per list page
 
 The token-bucket rate limiter in [`packages/pinecone-client/src/rate-limit.ts`](packages/pinecone-client/src/rate-limit.ts) enforces these on the client side so we never trigger a 429 storm.
+
+## Pinecone BYOC private-cluster support
+
+The migrator can copy or sync between SaaS indexes, BYOC indexes, or any combination of the two — including SaaS → private BYOC, which is the common "lift-and-shift" case. To make that work transparently, the Pinecone client wrapper auto-detects private BYOC endpoints when the worker is running inside the customer VPC and rewrites the data-plane host accordingly.
+
+### The problem
+
+A Pinecone BYOC environment provisioned with `public-access-enabled: false` publishes its DNS zone with two parallel wildcards:
+
+| Hostname pattern | DNS target |
+| --- | --- |
+| `*.svc.<env>.byoc.pinecone.io` | the reserved external IP that *would* host a public load balancer |
+| `*.svc.private.<env>.byoc.pinecone.io` | the in-VPC internal load balancer (PSC service attachment / private endpoint) |
+
+When `public-access-enabled` is `false`, no public load balancer is actually attached to the external IP, but the public DNS record still exists. Pinecone's control plane (`api.pinecone.io`) returns the **public** form of the host from `describeIndex`, so any client that takes that host at face value will fail TLS handshake or hang on connection — even from inside the customer VPC, where the only working path is via the `*.svc.private.*` wildcard.
+
+### What the wrapper does
+
+[`packages/pinecone-client/src/client.ts`](packages/pinecone-client/src/client.ts) exports `maybePrivatizeHost(rawHost)`. On every first access to an index, the wrapper:
+
+1. Calls `describeIndex(name)` to obtain the host the control plane returned.
+2. If the host matches `<idx>.svc.<env>.byoc.pinecone.io` (and is **not** already in the `.svc.private.` form), TCP-probes the candidate `<idx>.svc.private.<env>.byoc.pinecone.io` on port 443 with a 2 s timeout.
+3. If the probe succeeds, the resolved host is rewritten to the private form and cached. If it fails, the original host is returned unchanged.
+4. The SDK index is then constructed via `pc.index(name, host)` — passing the explicit host bypasses the SDK's own re-lookup so the rewrite isn't undone.
+
+The Gloo TLS cert that fronts the BYOC load balancer covers both wildcards, so SNI / `Host` headers don't need any extra fiddling and the SDK's certificate verification works unmodified.
+
+### Behavior summary
+
+| Scenario | What happens |
+| --- | --- |
+| SaaS index | Regex doesn't match → original host used → works as before |
+| BYOC index, worker inside VPC | Probe succeeds → host rewritten to `.svc.private.<env>.byoc.pinecone.io` → traffic flows through the VPC's internal LB |
+| BYOC index, worker outside VPC (e.g. local `pnpm dev`) | Probe fails → original (public) host returned → connection fails loudly with TLS error rather than a silent rewrite to an unreachable address |
+| Index host already in `.svc.private.*` form | Regex skips it → unchanged |
+
+There is no env var to flip and no per-job configuration: the wrapper fingerprints the host and probes only when the BYOC pattern matches. The probe runs once per index per `MigratorPineconeClient` instance and the result is cached for the life of the process. The first time a BYOC host is rewritten, the worker logs a single line:
+
+```
+[BYOC] Using private endpoint: <idx>.svc.private.<env>.byoc.pinecone.io
+```
+
+### Deploying the worker into a BYOC VPC
+
+To run a SaaS → BYOC sync (or any job touching a private BYOC index), the `worker` container needs:
+
+- A network path to the in-VPC private endpoint (typically: deploy on a VM in the same VPC as the BYOC GKE / EKS / AKS cluster, or in a peered VPC with a route to the `*.svc.private.*` IP).
+- General internet egress (Cloud NAT, NAT gateway, etc.) so it can still reach `api.pinecone.io` and any SaaS data-plane hosts.
+
+The web / API / Postgres / Redis / Redpanda services don't need any special placement — they only need to be reachable by the worker. A common pattern is to run the entire docker-compose stack on a single VM inside the BYOC VPC, then port-forward the web UI to operators (e.g. via IAP TCP forwarding on GCP).
 
 ## License
 

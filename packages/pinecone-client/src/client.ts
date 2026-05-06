@@ -1,3 +1,4 @@
+import net from 'node:net';
 import { Pinecone, type Index } from '@pinecone-database/pinecone';
 import type { IndexInfo, NamespaceInfo } from '@migrator/shared';
 import { RateLimiter, withRetry } from './rate-limit.js';
@@ -8,6 +9,68 @@ import type {
   MigratorRecord,
   UpsertResult,
 } from './types.js';
+
+/**
+ * Private GCP BYOC clusters publish *both* a public DNS wildcard
+ * `*.svc.<env>.byoc.pinecone.io` (which points at a reserved external IP
+ * that has no load balancer attached when public-access-enabled=false) and
+ * a parallel `*.svc.private.<env>.byoc.pinecone.io` wildcard that resolves
+ * to the in-VPC PSC load balancer. The TLS cert covers both forms, so
+ * rewriting the host is enough to connect.
+ *
+ * The Pinecone control plane returns the public form via `describeIndex`,
+ * so any client running inside a customer VPC has to translate before
+ * connecting to the data plane. We auto-detect by TCP-probing the private
+ * candidate; rewrite only when it is actually reachable. From outside the
+ * VPC the probe fails and the original host is returned unchanged, so SaaS
+ * users and laptop-side dev are unaffected.
+ */
+const BYOC_PUBLIC_HOST_RE =
+  /^(.+?)\.svc\.(?!private\.)([A-Za-z0-9-]+\.byoc\.pinecone\.io)$/;
+const BYOC_PRIVATE_PROBE_TIMEOUT_MS = 2_000;
+
+async function tcpProbe(host: string, port: number, timeoutMs: number): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    const socket = new net.Socket();
+    let settled = false;
+    const finish = (ok: boolean): void => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolve(ok);
+    };
+    socket.setTimeout(timeoutMs);
+    socket.once('connect', () => finish(true));
+    socket.once('timeout', () => finish(false));
+    socket.once('error', () => finish(false));
+    socket.connect(port, host);
+  });
+}
+
+export async function maybePrivatizeHost(rawHost: string): Promise<string> {
+  if (!rawHost) return rawHost;
+
+  let scheme = '';
+  let bare = rawHost;
+  if (bare.startsWith('https://')) {
+    scheme = 'https://';
+    bare = bare.slice('https://'.length);
+  } else if (bare.startsWith('http://')) {
+    scheme = 'http://';
+    bare = bare.slice('http://'.length);
+  }
+  bare = bare.replace(/\/+$/, '');
+
+  const match = bare.match(BYOC_PUBLIC_HOST_RE);
+  if (!match) return rawHost;
+
+  const privateHost = `${match[1]}.svc.private.${match[2]}`;
+  const reachable = await tcpProbe(privateHost, 443, BYOC_PRIVATE_PROBE_TIMEOUT_MS);
+  if (!reachable) return rawHost;
+
+  console.log(`[BYOC] Using private endpoint: ${privateHost}`);
+  return `${scheme}${privateHost}`;
+}
 
 /**
  * Pinecone's fetch endpoint uses `GET /vectors/fetch?ids=…&ids=…` — every ID is a separate
@@ -51,6 +114,8 @@ export class MigratorPineconeClient {
   private readonly limiter: RateLimiter;
   private readonly opts: Required<ClientOptions>;
   private indexCache = new Map<string, Index>();
+  /** Cache of (possibly privatized) data-plane hosts keyed by index name. */
+  private hostCache = new Map<string, string>();
 
   constructor(apiKey: string, opts: ClientOptions = {}) {
     this.pc = new Pinecone({ apiKey });
@@ -87,7 +152,7 @@ export class MigratorPineconeClient {
    * `describeIndexStats` for SDK versions that don't expose listNamespaces.
    */
   async *listNamespaces(indexName: string): AsyncIterable<NamespaceInfo> {
-    const index = this.indexFor(indexName);
+    const index = await this.indexFor(indexName);
     const indexLimiterKey = `idx:${indexName}:list`;
     this.limiter.configure(indexLimiterKey, this.opts.perIndexListQPS, this.opts.perIndexListQPS);
 
@@ -139,7 +204,7 @@ export class MigratorPineconeClient {
     totalRecordCount: number;
     namespaces: Record<string, number>;
   }> {
-    const idx = this.indexFor(indexName);
+    const idx = await this.indexFor(indexName);
     await this.limiter.acquire(`idx:${indexName}:stats`);
     const stats = await withRetry(() => idx.describeIndexStats());
     const namespaces: Record<string, number> = {};
@@ -176,7 +241,7 @@ export class MigratorPineconeClient {
     namespace: string,
     opts: { prefix?: string; pageSize?: number; resumeToken?: string | null } = {},
   ): AsyncIterable<{ ids: string[]; nextToken: string | null; readUnits?: number }> {
-    const idx = this.indexFor(indexName).namespace(namespace);
+    const idx = (await this.indexFor(indexName)).namespace(namespace);
     const indexLimiterKey = `idx:${indexName}:list`;
     this.limiter.configure(indexLimiterKey, this.opts.perIndexListQPS, this.opts.perIndexListQPS);
     const limit = Math.min(100, Math.max(1, opts.pageSize ?? 100));
@@ -226,7 +291,7 @@ export class MigratorPineconeClient {
    */
   async fetch(indexName: string, namespace: string, ids: string[]): Promise<FetchResult> {
     if (ids.length === 0) return { records: [], usage: {} };
-    const idx = this.indexFor(indexName).namespace(namespace);
+    const idx = (await this.indexFor(indexName)).namespace(namespace);
     const fetchKey = `idx:${indexName}:fetch`;
     this.limiter.configure(fetchKey, this.opts.perIndexFetchQPS, this.opts.perIndexFetchQPS);
 
@@ -280,7 +345,7 @@ export class MigratorPineconeClient {
   ): Promise<UpsertResult> {
     if (records.length === 0)
       return { upsertedCount: 0, requestBytes: 0, usage: {} };
-    const idx = this.indexFor(indexName).namespace(namespace);
+    const idx = (await this.indexFor(indexName)).namespace(namespace);
     const qpsKey = `ns:${indexName}:${namespace}:upsert:qps`;
     const bytesKey = `ns:${indexName}:${namespace}:upsert:bytes`;
     this.limiter.configure(qpsKey, this.opts.perNamespaceQPS, this.opts.perNamespaceQPS);
@@ -332,7 +397,7 @@ export class MigratorPineconeClient {
     ids: string[],
   ): Promise<DeleteResult> {
     if (ids.length === 0) return { deletedCount: 0, usage: {} };
-    const idx = this.indexFor(indexName).namespace(namespace);
+    const idx = (await this.indexFor(indexName)).namespace(namespace);
     const qpsKey = `ns:${indexName}:${namespace}:delete:qps`;
     this.limiter.configure(qpsKey, this.opts.perNamespaceQPS, this.opts.perNamespaceQPS);
 
@@ -348,12 +413,23 @@ export class MigratorPineconeClient {
 
   // ---------------- Helpers ----------------
 
-  private indexFor(name: string): Index {
-    let idx = this.indexCache.get(name);
-    if (!idx) {
-      idx = this.pc.index(name);
-      this.indexCache.set(name, idx);
+  private async indexFor(name: string): Promise<Index> {
+    const cached = this.indexCache.get(name);
+    if (cached) return cached;
+
+    let host = this.hostCache.get(name);
+    if (!host) {
+      const info = await withRetry(() => this.pc.describeIndex(name));
+      const rawHost = (info as { host?: string }).host ?? '';
+      host = await maybePrivatizeHost(rawHost);
+      this.hostCache.set(name, host);
     }
+
+    // Pass the resolved host as the second arg so the SDK skips its own
+    // describeIndex round-trip (which would otherwise return the public
+    // BYOC host and re-break the rewrite).
+    const idx = host ? this.pc.index(name, host) : this.pc.index(name);
+    this.indexCache.set(name, idx);
     return idx;
   }
 }
