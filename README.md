@@ -53,6 +53,21 @@ docker compose up -d postgres redis redpanda
 
 Use the same `.env` values so `DATABASE_URL`, `REDIS_URL`, and `KAFKA_BROKERS` point at those containers (see [.env.example](.env.example)).
 
+### Shutting down
+
+```bash
+# Stop everything but keep Postgres/Redis/Redpanda data and built images.
+docker compose --profile app down
+
+# Same, but also wipe the named volumes — clean slate next boot.
+docker compose --profile app down -v
+
+# Same, plus remove the locally-built api/worker/web images to free disk.
+docker compose --profile app down -v --rmi local
+```
+
+`--profile app` is required so the api / worker / web services included by that profile are also torn down. Use `docker compose stop <service>` if you only want to pause a subset without removing them.
+
 ## Highlights
 
 - **Browse and search namespaces at scale.** Server streams the full namespace list (paginated 100 at a time per the Pinecone API). The frontend uses TanStack Virtual + Fuse.js for fuzzy/partial search and remains snappy even at 100k+ namespaces.
